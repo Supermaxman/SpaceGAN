@@ -22,12 +22,28 @@ class AbstractGAN(abc.ABC):
 			name,
 			epochs,
 			scale_dataset,
+			crop_dataset,
+			channels,
 			batch_size,
 			generator_lr,
 			discriminator_lr,
+			beta1,
+			beta2,
+			bn_momentum,
+			generator_base_size,
+			discriminator_base_size,
+			label_smoothing_factor,
+			discriminator_noise_factor,
+			discriminator_noise_decay_zero_steps,
+			use_batch_norm,
+			balance_loss,
+			generator_loss_ratio,
+			discriminator_loss_ratio,
 			generator_steps,
 			discriminator_steps,
 			max_grad_norm,
+			epsilon,
+			regularizer_scale,
 			random_size,
 			checkpoint_dir,
 			data_dir,
@@ -35,18 +51,28 @@ class AbstractGAN(abc.ABC):
 			log_dir,
 			log_steps,
 			generate_steps,
-			save_steps):
+			save_steps,
+			*args,
+			**kwargs
+	):
 
 		self.name = name
 		self.epochs = epochs
 		self.scale_dataset = scale_dataset
+		self.crop_dataset = crop_dataset
 		self.batch_size = batch_size
 		self.generator_lr = generator_lr
 		self.discriminator_lr = discriminator_lr
+		self.beta1 = beta1
+		self.beta2 = beta2
+		self.bn_momentum = bn_momentum
 		self.generator_steps = generator_steps
 		self.discriminator_steps = discriminator_steps
 		self.random_size = random_size
 		self.z_size = random_size
+		self.use_batch_norm = use_batch_norm
+		self.generator_base_size = generator_base_size
+		self.discriminator_base_size = discriminator_base_size
 
 		if not os.path.exists(checkpoint_dir):
 			os.makedirs(checkpoint_dir)
@@ -75,6 +101,9 @@ class AbstractGAN(abc.ABC):
 
 		self.image_paths = data_utils.load_path_factors(self.files_list)
 
+		self.dataset_size = sum(self.image_paths)
+		self.channels = channels
+
 		if not os.path.exists(self.data_dir):
 			os.makedirs(self.data_dir)
 
@@ -84,26 +113,26 @@ class AbstractGAN(abc.ABC):
 			self.random_size
 		)
 
+		self.label_smoothing_factor = label_smoothing_factor
+
+		self.discriminator_noise_factor = discriminator_noise_factor
+		self.discriminator_noise_decay_zero_steps = discriminator_noise_decay_zero_steps
+		self.kernel_initializer = None
+		# TODO add kernel_initializer support everywhere
+		assert self.kernel_initializer is None
 		# self.kernel_initializer = tf.initializers.orthogonal(gain=0.1)
-		self.kernel_initializer = tf.truncated_normal_initializer(stddev=0.02)
+		# self.kernel_initializer = tf.truncated_normal_initializer(stddev=0.02)
 		# self.kernel_initializer = tf.initializers.he_normal()
-		# self.kernel_initializer = None
-		# self.kernel_initializer = tf.glorot_normal_initializer()
-		# self.kernel_initializer = tf.glorot_uniform_initializer()
-		# self.resize_method = tf.image.ResizeMethod.BILINEAR
-		# self.resize_method = tf.image.ResizeMethod.BICUBIC
-		self.resize_method = tf.image.ResizeMethod.NEAREST_NEIGHBOR
 
-		self.epsilon = 1e-8
+		self.epsilon = epsilon
 		self.max_grad_norm = max_grad_norm
-		# self.regularizer_scale = 0.0
-		self.regularizer_scale = 0.0
+		self.regularizer_scale = regularizer_scale
 
-		self.balance_loss = False
+		self.balance_loss = balance_loss
 		# if generator loss * ratio < discriminator loss then don't train generator
-		self.g_loss_ratio = 1.0
+		self.generator_loss_ratio = generator_loss_ratio
 		# if discriminator loss * ratio < generator loss then don't train discriminator
-		self.d_loss_ratio = 1.0
+		self.discriminator_loss_ratio = discriminator_loss_ratio
 
 	def build_inputs(self):
 		with tf.variable_scope('inputs'):
@@ -112,10 +141,9 @@ class AbstractGAN(abc.ABC):
 			self.dataset = data_utils.create_dataset(
 				self.data_dir,
 				self.batch_size,
-				self.scale_dataset
+				self.scale_dataset,
+				self.crop_dataset
 			)
-			self.dataset_size = sum(self.image_paths)
-			self.channels = 3
 
 			print('Dataset: {}'.format('SPACE'))
 			print(' - size: {}'.format(self.dataset_size))
@@ -138,9 +166,6 @@ class AbstractGAN(abc.ABC):
 
 			self.global_step = tf.Variable(0, trainable=False, name='global_step')
 
-			# self.generator_regularizer = None
-			# self.discriminator_regularizer = None
-			# self.mutual_info_regularizer = None
 			if self.regularizer_scale > 0.0:
 				self.generator_regularizer = tf.contrib.layers.l2_regularizer(self.regularizer_scale)
 				self.discriminator_regularizer = tf.contrib.layers.l2_regularizer(self.regularizer_scale)
@@ -152,169 +177,110 @@ class AbstractGAN(abc.ABC):
 
 	def build_generator(self):
 		with tf.variable_scope('generator'):
-			def layer(inputs, filters, kernel_size, strides=(2, 2),
-								padding='same', use_bn=True, use_reg=True,
-								activation=tf.nn.leaky_relu):
-				if use_reg:
-					kernel_regularizer = self.generator_regularizer
-				else:
-					kernel_regularizer = None
-
-				# TODO add better upscaling method
-				out = tf.layers.conv2d_transpose(
-					inputs, filters, kernel_size,
-					strides=strides, padding=padding,
-					kernel_regularizer=kernel_regularizer,
-					kernel_initializer=self.kernel_initializer,
-					use_bias=not use_bn
-				)
-				# TODO more efficient upconv2d probably
-				# out = custom_layers.upconv2d(
-				# 	inputs, filters, kernel_size,
-				# 	up_strides=strides,
-				# 	conv_strides=(1, 1),
-				# 	padding=padding,
-				# 	resize_method=self.resize_method,
-				# 	kernel_regularizer=kernel_regularizer,
-				# 	kernel_initializer=self.kernel_initializer
-				# )
-
-				if use_bn:
-					# out = tf.layers.batch_normalization(
-					# 	out,
-					# 	training=self.is_training,
-					# 	momentum=0.9,
-					# 	center=True,
-					# 	scale=True
-					# )
-					out = tf.contrib.layers.layer_norm(
-						out
-					)
-				if activation is not None:
-					out = activation(out)
-				return out
-
-			G = self.zc_vectors
-			G = tf.layers.dense(
-				G,
-				units=4*4*32,
-				activation=None
+			activation = tf.nn.relu
+			layer = tf.layers.conv2d_transpose
+			dense_layer = tf.layers.dense
+			g_out = self.zc_vectors
+			base_size = self.generator_base_size
+			noise_dense_input_shape = [-1, 4, 4, 2*2*2*2*base_size]
+			g_out = dense_layer(
+				g_out,
+				units=np.prod(noise_dense_input_shape[1:])
 			)
-			G = tf.reshape(G, shape=[-1, 4, 4, 32])
-			G = layer(G, 256, 4, strides=2)
-			G = layer(G, 128, 4, strides=2)
-			G = layer(G, 64, 4, strides=2)
-			G = layer(G, 64, 4, strides=2)
-			G = layer(G, 64, 4, strides=2)
-			G = layer(G, 64, 4, strides=2)
-			G = layer(G, self.channels, 4, strides=2, use_bn=False, use_reg=False, activation=tf.nn.tanh)
-			self.fake_images = tf.identity(G, name='fake_images')
+
+			g_out = tf.reshape(g_out, shape=noise_dense_input_shape)
+
+			def block(x, filters):
+				with tf.variable_scope(name_or_scope=None, default_name='block'):
+					x = layer(
+						x,
+						filters=filters,
+						kernel_size=4,
+						strides=2,
+						padding='same'
+					)
+					x = activation(x)
+					if self.use_batch_norm:
+						x = tf.layers.batch_normalization(x, training=self.is_training, momentum=self.bn_momentum)
+					return x
+
+			g_out = block(g_out, 2*2*2*2*base_size)
+			g_out = block(g_out, 2*2*2*base_size)
+			g_out = block(g_out, 2*2*base_size)
+			g_out = block(g_out, 2*base_size)
+			g_out = block(g_out, base_size)
+
+			g_out = tf.layers.conv2d(g_out, filters=3, kernel_size=3, strides=1, padding='same', activation=tf.nn.tanh)
+
+			self.fake_images = tf.identity(g_out, name='fake_images')
 
 	def build_discriminator(self):
-			def apply_discriminator(x):
+			def apply_discriminator(d_out):
 				with tf.variable_scope('discriminator', reuse=tf.AUTO_REUSE):
+					base_size = self.discriminator_base_size
 					activation = tf.nn.leaky_relu
-					x = tf.layers.conv2d(
-						x,
-						filters=64,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x = tf.layers.conv2d(
-						x,
-						filters=64,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x = tf.layers.conv2d(
-						x,
-						filters=64,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x = tf.layers.conv2d(
-						x,
-						filters=64,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x = tf.layers.conv2d(
-						x,
-						filters=128,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x = tf.layers.conv2d(
-						x,
-						filters=256,
-						kernel_size=4,
-						strides=2,
-						padding='same',
-						kernel_regularizer=self.discriminator_regularizer,
-						kernel_initializer=self.kernel_initializer,
-						use_bias=False
-					)
-					x = tf.contrib.layers.layer_norm(
-						x
-					)
-					x = activation(x)
-					x_shape = x.get_shape().as_list()
+					layer = custom_layers.spectral_conv2d
+					# layer = tf.layers.conv2d
+					dense_layer = custom_layers.spectral_dense
+					# dense_layer = tf.layers.dense
 
-					# x = tf.reshape(x, [-1, np.prod(x_shape[1:])])
-					x = tf.layers.average_pooling2d(x, pool_size=(x_shape[1], x_shape[2]), strides=1)
-					x = tf.reshape(x, [-1, x_shape[3]])
-					F = x
-					x = tf.layers.dense(
-						x,
-						units=1,
-						kernel_initializer=self.kernel_initializer
+					def block(x, filters):
+						with tf.variable_scope(name_or_scope=None, default_name='block'):
+							x = layer(
+								x,
+								filters=filters,
+								kernel_size=3,
+								strides=1,
+								padding='same'
+							)
+							x = activation(x)
+							x = layer(
+								x,
+								filters=filters,
+								kernel_size=4,
+								strides=2,
+								padding='same'
+							)
+							x = activation(x)
+							return x
+
+					d_out = block(d_out, base_size)
+					d_out = block(d_out, 2*base_size)
+					d_out = block(d_out, 2*2*base_size)
+					d_out = block(d_out, 2*2*2*base_size)
+					d_out = block(d_out, 2*2*2*2*base_size)
+
+					d_shape = d_out.get_shape().as_list()
+
+					d_out = tf.reshape(d_out, [-1, np.prod(d_shape[1:])])
+					feature_out = d_out
+					d_out = dense_layer(
+						d_out,
+						units=1
 					)
-					C = x
-					D = tf.nn.sigmoid(x)
-					return F, C, D
+					score_out = d_out
+					d_out = tf.nn.sigmoid(d_out)
+					return feature_out, score_out, d_out
+
 			self.apply_discriminator = apply_discriminator
-			self.real_features, self.real_score, self.real_prob = apply_discriminator(self.real_images)
-			self.fake_features, self.fake_score, self.fake_prob = apply_discriminator(self.fake_images)
+
+			real_inputs = self.real_images
+			fake_inputs = self.fake_images
+
+			if self.discriminator_noise_factor > 0.0:
+				decay_factor = tf.maximum(
+					1.0 - (tf.cast(self.global_step, tf.float32) / self.discriminator_noise_decay_zero_steps),
+					0.0
+				)
+				decayed_noise_factor = self.discriminator_noise_factor * decay_factor
+
+				real_noise = tf.random.normal(shape=tf.shape(self.real_images), mean=0, stddev=decayed_noise_factor)
+				fake_noise = tf.random.normal(shape=tf.shape(self.fake_images), mean=0, stddev=decayed_noise_factor)
+				real_inputs += real_noise
+				fake_noise += fake_noise
+
+			self.real_features, self.real_score, self.real_prob = apply_discriminator(real_inputs)
+			self.fake_features, self.fake_score, self.fake_prob = apply_discriminator(fake_inputs)
 
 	def build_train(self):
 		# generator wants to maximize fake classification
@@ -325,19 +291,31 @@ class AbstractGAN(abc.ABC):
 
 		with tf.variable_scope('train'):
 
+			self.all_params = tf.get_collection(
+				tf.GraphKeys.TRAINABLE_VARIABLES,
+				scope='all'
+			)
 			self.generator_params = tf.get_collection(
 				tf.GraphKeys.TRAINABLE_VARIABLES,
-				scope='generator')
+				scope='generator'
+			) + self.all_params
 			self.discriminator_params = tf.get_collection(
 				tf.GraphKeys.TRAINABLE_VARIABLES,
-				scope='discriminator')
+				scope='discriminator'
+			) + self.all_params
 
 			update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-			#
-			generator_optimizer = tf.train.AdamOptimizer(learning_rate=self.generator_lr, beta1=0.0, beta2=0.9)
-			discriminator_optimizer = tf.train.AdamOptimizer(learning_rate=self.discriminator_lr, beta1=0.0, beta2=0.9)
-			# generator_optimizer = tf.train.RMSPropOptimizer(learning_rate=self.generator_lr)
-			# discriminator_optimizer = tf.train.RMSPropOptimizer(learning_rate=self.discriminator_lr)
+
+			generator_optimizer = tf.train.AdamOptimizer(
+				learning_rate=self.generator_lr,
+				beta1=self.beta1,
+				beta2=self.beta2
+			)
+			discriminator_optimizer = tf.train.AdamOptimizer(
+				learning_rate=self.discriminator_lr,
+				beta1=self.beta1,
+				beta2=self.beta2
+			)
 
 			self.increment_global_step = tf.assign_add(self.global_step, 1)
 
@@ -356,124 +334,99 @@ class AbstractGAN(abc.ABC):
 					with tf.variable_scope(name):
 						grads_and_vars = optimizer.compute_gradients(loss, params)
 						actual_grads_and_vars = [(gv[0], gv[1]) for gv in grads_and_vars if gv[0] is not None]
-						# max_grad = tf.reduce_max([tf.reduce_max(tf.abs(gv[0])) for gv in actual_grads_and_vars])
-						# max_grad_norm = tf.reduce_max([tf.norm(gv[0]) for gv in actual_grads_and_vars])
-						# clipped_grads_and_vars = [(tf.clip_by_norm(gv[0], self.max_grad_norm), gv[1]) for gv in
-						# 													actual_grads_and_vars]
-						clipped_grads_and_vars = actual_grads_and_vars
-						optim = optimizer.apply_gradients(clipped_grads_and_vars, name=name)
-						max_grad = tf.constant(0)
-						max_grad_norm = tf.constant(0)
-					return optim, max_grad, max_grad_norm
+						max_grad = tf.reduce_max([tf.reduce_max(tf.abs(gv[0])) for gv in actual_grads_and_vars])
+						max_grad_norm = tf.reduce_max([tf.norm(gv[0]) for gv in actual_grads_and_vars])
+
+						if self.max_grad_norm > 0.0:
+							clipped_grads_and_vars = [
+								(tf.clip_by_norm(gv[0], self.max_grad_norm), gv[1]) for gv in actual_grads_and_vars
+							]
+						else:
+							clipped_grads_and_vars = actual_grads_and_vars
+
+						train_op = optimizer.apply_gradients(clipped_grads_and_vars, name=name)
+					return train_op, max_grad, max_grad_norm
 
 				self.train_generator, self.generator_max_grad, self.generator_max_grad_norm = clip_train_op(
 					generator_optimizer,
 					self.total_generator_loss,
 					self.generator_params,
-					name='train_generator')
+					name='train_generator'
+				)
 
 				self.train_discriminator, self.discriminator_max_grad, self.discriminator_max_grad_norm = clip_train_op(
 					discriminator_optimizer,
 					self.total_discriminator_loss,
 					self.discriminator_params,
-					name='train_discriminator')
+					name='train_discriminator'
+				)
 
 	def build_summaries(self):
-		summaries = []
 		with tf.variable_scope('loss_summaries'):
-			summaries.append(
-				tf.summary.scalar(
-					name='generator_loss',
-					tensor=self.generator_loss)
-			)
-			summaries.append(
-				tf.summary.scalar(
-					name='discriminator_loss',
-					tensor=self.discriminator_loss)
-			)
-		with tf.variable_scope('grad_summaries'):
-			summaries.append(
-				tf.summary.scalar(
-					name='generator_max_grad',
-					tensor=self.generator_max_grad)
-			)
-			summaries.append(
-				tf.summary.scalar(
-					name='generator_max_grad_norm',
-					tensor=self.generator_max_grad_norm)
-			)
-			summaries.append(
-				tf.summary.scalar(
-					'discriminator_max_grad',
-					tensor=self.discriminator_max_grad)
-			)
-			summaries.append(
-				tf.summary.scalar(
-					'discriminator_max_grad_norm',
-					tensor=self.discriminator_max_grad_norm)
+			tf.summary.scalar(
+				name='generator_loss',
+				tensor=self.generator_loss
 			)
 
+			tf.summary.scalar(
+				name='discriminator_loss',
+				tensor=self.discriminator_loss)
+		if self.max_grad_norm > 0.0:
+			with tf.variable_scope('grad_summaries'):
+				tf.summary.scalar(
+					name='generator_max_grad',
+					tensor=self.generator_max_grad
+				)
+
+				tf.summary.scalar(
+					name='generator_max_grad_norm',
+					tensor=self.generator_max_grad_norm
+				)
+				tf.summary.scalar(
+					'discriminator_max_grad',
+					tensor=self.discriminator_max_grad
+				)
+
+				tf.summary.scalar(
+					'discriminator_max_grad_norm',
+					tensor=self.discriminator_max_grad_norm
+				)
+
 		with tf.variable_scope('discriminator_summaries'):
-			summaries.append(
-				tf.summary.scalar(
-					name='real_score',
-					tensor=tf.reduce_mean(self.real_score))
+			tf.summary.scalar(
+				name='real_score',
+				tensor=tf.reduce_mean(self.real_score)
 			)
-			summaries.append(
-				tf.summary.scalar(
-					name='real_prob',
-					tensor=tf.reduce_mean(self.real_prob))
-			)
-			summaries.append(
-				tf.summary.histogram(
-					name='real_score_hist',
-					values=self.real_score)
-			)
-			summaries.append(
-				tf.summary.histogram(
-					name='real_prob_hist',
-					values=self.real_prob)
+			tf.summary.scalar(
+				name='real_prob',
+				tensor=tf.reduce_mean(self.real_prob)
 			)
 
 		with tf.variable_scope('generator_summaries'):
-			summaries.append(
-				tf.summary.scalar(
-					name='fake_score',
-					tensor=tf.reduce_mean(self.fake_score))
-			)
-			summaries.append(
-				tf.summary.scalar(
-					name='fake_prob',
-					tensor=tf.reduce_mean(self.fake_prob))
-			)
-			summaries.append(
-				tf.summary.histogram(
-					name='fake_score_hist',
-					values=self.fake_score)
-			)
-			summaries.append(
-				tf.summary.histogram(
-					name='fake_prob_hist',
-					values=self.fake_prob)
+			tf.summary.scalar(
+				name='fake_score',
+				tensor=tf.reduce_mean(self.fake_score)
 			)
 
-		with tf.variable_scope('regularizer_summaries'):
-			summaries.append(
+			tf.summary.scalar(
+				name='fake_prob',
+				tensor=tf.reduce_mean(self.fake_prob)
+			)
+
+		if self.regularizer_scale > 0.0:
+			with tf.variable_scope('regularizer_summaries'):
 				tf.summary.scalar(
 					name='generator_regularizer_loss',
-					tensor=self.generator_regularizer_loss)
-			)
-			summaries.append(
+					tensor=self.generator_regularizer_loss
+				)
+
 				tf.summary.scalar(
 					name='discriminator_regularizer_loss',
-					tensor=self.discriminator_regularizer_loss)
-			)
+					tensor=self.discriminator_regularizer_loss
+				)
 
 		with tf.variable_scope('summaries'):
-			self.summaries = tf.summary.merge(
-				inputs=summaries,
-				name='summaries'
-			)
+			self.summaries = tf.summary.merge_all(name='summaries')
 
 	def build(self):
 		self.build_inputs()
@@ -502,14 +455,14 @@ class AbstractGAN(abc.ABC):
 		train_g = True
 		train_d = True
 		if self.balance_loss:
-			if prev_g_loss * self.g_loss_ratio < prev_d_loss:
+			if prev_g_loss * self.generator_loss_ratio < prev_d_loss:
 				train_g = False
-			elif prev_d_loss * self.d_loss_ratio < prev_g_loss:
+			elif prev_d_loss * self.discriminator_loss_ratio < prev_g_loss:
 				train_d = False
 
 		discriminator_fetches = [
 															self.train_discriminator,
-															self.discriminator_loss] + ([self.summaries] if is_log_step else [])
+															self.discriminator_loss] + ([self.summaries] if is_log_step and not train_g else [])
 
 		generator_fetches = [
 													self.train_generator,
@@ -526,7 +479,7 @@ class AbstractGAN(abc.ABC):
 					}
 				)
 				_, d_loss = d_results[:2]
-				summary = d_results[-1] if is_log_step else None
+				summary = d_results[-1] if is_log_step and not train_g else None
 		else:
 			d_loss = prev_d_loss
 
@@ -591,7 +544,7 @@ class AbstractGAN(abc.ABC):
 			journalist=self.summary_writer,
 			log_dir=self.log_dir,
 			generate=lambda sess, x: sess.run(
-				self.fake_images,
+				[self.fake_images, self.real_images],
 				{self.zc_vectors: x}
 			),
 			row_size=10
@@ -599,9 +552,6 @@ class AbstractGAN(abc.ABC):
 		if self.data_init_op is not None:
 			self.sess.run(self.data_init_op)
 
-		# step = self.sess.run(self.global_step)
-		# epoch_size = self.dataset_size // self.batch_size
-		# TODO calculate remaining epochs
 		for epoch in range(self.epochs):
 			avg_d_loss, avg_g_loss, step = self.train_epoch()
 
@@ -613,7 +563,8 @@ class AbstractGAN(abc.ABC):
 
 			print(state)
 
-	def count_trainable_variables(self):
+	@staticmethod
+	def count_trainable_variables():
 		total_variables = 0
 		for variable in tf.trainable_variables():
 			shape = variable.get_shape().as_list()
@@ -630,7 +581,7 @@ class AbstractGAN(abc.ABC):
 		if ckpt and ckpt.model_checkpoint_path:
 			self.saver.restore(self.sess, ckpt.model_checkpoint_path)
 		else:
-			raise Exception('No checkpoint found!')
+			raise FileNotFoundError('No checkpoint found!')
 
 	def start_session(self):
 		config = tf.ConfigProto()
@@ -638,58 +589,20 @@ class AbstractGAN(abc.ABC):
 		self.sess = tf.Session(config=config)
 
 	def close(self):
-		# TODO maybe make this within a context manager?
 		self.sess.close()
 		tf.reset_default_graph()
 
-	def build_final(self):
-		pass
-
 
 class DCGAN(AbstractGAN):
-	def __init__(
-			self,
-			name,
-			epochs,
-			scale_dataset,
-			batch_size,
-			generator_lr,
-			discriminator_lr,
-			generator_steps,
-			discriminator_steps,
-			max_grad_norm,
-			random_size,
-			checkpoint_dir,
-			data_dir,
-			files_list,
-			log_dir,
-			log_steps,
-			generate_steps,
-			save_steps):
-		super().__init__(
-			name,
-			epochs,
-			scale_dataset,
-			batch_size,
-			generator_lr,
-			discriminator_lr,
-			generator_steps,
-			discriminator_steps,
-			max_grad_norm,
-			random_size,
-			checkpoint_dir,
-			data_dir,
-			files_list,
-			log_dir,
-			log_steps,
-			generate_steps,
-			save_steps)
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
 
 	def build_generator_loss(self):
 		with tf.variable_scope('generator_loss'):
 			generator_loss = tf.reduce_mean(
-				-tf.log(
-					self.fake_prob + self.epsilon
+				tf.nn.sigmoid_cross_entropy_with_logits(
+					labels=tf.ones_like(self.fake_score),
+					logits=self.fake_score
 				)
 			)
 		return generator_loss
@@ -697,54 +610,22 @@ class DCGAN(AbstractGAN):
 	def build_discriminator_loss(self):
 		with tf.variable_scope('discriminator_loss'):
 			discriminator_loss = tf.reduce_mean(
-				- tf.log(
-					self.real_prob + self.epsilon
+				tf.nn.sigmoid_cross_entropy_with_logits(
+					labels=tf.ones_like(self.real_score) * self.label_smoothing_factor,
+					logits=self.real_score
 				)
-				- tf.log(
-					1 - self.fake_prob + self.epsilon
+				+
+				tf.nn.sigmoid_cross_entropy_with_logits(
+					labels=tf.zeros_like(self.fake_score),
+					logits=self.fake_score
 				)
 			)
 		return discriminator_loss
 
 
-class DCWGANGP(AbstractGAN):
-	def __init__(
-			self,
-			name,
-			epochs,
-			scale_dataset,
-			batch_size,
-			generator_lr,
-			discriminator_lr,
-			generator_steps,
-			discriminator_steps,
-			max_grad_norm,
-			random_size,
-			checkpoint_dir,
-			data_dir,
-			files_list,
-			log_dir,
-			log_steps,
-			generate_steps,
-			save_steps):
-		super().__init__(
-			name,
-			epochs,
-			scale_dataset,
-			batch_size,
-			generator_lr,
-			discriminator_lr,
-			generator_steps,
-			discriminator_steps,
-			max_grad_norm,
-			random_size,
-			checkpoint_dir,
-			data_dir,
-			files_list,
-			log_dir,
-			log_steps,
-			generate_steps,
-			save_steps)
+class WGAN(AbstractGAN):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
 
 	def build_generator_loss(self):
 		with tf.variable_scope('generator_loss'):
@@ -763,6 +644,17 @@ class DCWGANGP(AbstractGAN):
 			)
 			discriminator_loss = real_loss + fake_loss
 
+		return discriminator_loss
+
+
+class WGANGP(WGAN):
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+
+	def build_discriminator_loss(self):
+		discriminator_loss = super().build_discriminator_loss()
+
 		alpha = tf.random_uniform(
 			shape=[tf.shape(self.real_score)[0], 1, 1, 1],
 			minval=0.,
@@ -774,7 +666,49 @@ class DCWGANGP(AbstractGAN):
 		gradients = gradients[0]
 		slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), axis=[1, 2, 3]))
 		gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
-		discriminator_loss += 10.0 * gradient_penalty
+		# LAMBDA = 10 usually, but for larger images this makes the loss massive
+		discriminator_loss += 1.0 * gradient_penalty
 
 		return discriminator_loss
 
+
+class InfoGAN(DCGAN):
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.zc_loss_factor = 0.1
+		self.num_continuous = 2
+		assert self.num_continuous <= self.random_size
+
+	def build_generator_loss(self):
+		generator_loss = super().build_generator_loss()
+
+		with tf.variable_scope('all', reuse=tf.AUTO_REUSE):
+			# first num_continuous random variables are special InfoGan noise variables
+			self.c_vectors = self.zc_vectors[:, :self.num_continuous]
+			c_prediction = tf.layers.dense(
+				self.fake_features,
+				units=self.num_continuous,
+				name='c_prediction'
+			)
+			# assumes 1 stddev, set from noise_utils
+			std_config = tf.ones_like(c_prediction)
+			diff = (self.c_vectors - c_prediction) / (std_config + self.epsilon)
+			zc_loss = - 0.5 * np.log(2 * np.pi) - tf.log(std_config + self.epsilon) - 0.5 * tf.square(diff)
+			zc_loss = -zc_loss
+			zc_loss = tf.reduce_sum(
+				zc_loss,
+				axis=-1,
+			)
+			self.zc_loss = tf.reduce_mean(zc_loss, axis=-1)
+		tf.summary.scalar(
+			name='generator_zc_loss',
+			tensor=self.zc_loss
+		)
+		generator_loss += self.zc_loss_factor * self.zc_loss
+		return generator_loss
+
+	def build_discriminator_loss(self):
+		discriminator_loss = super().build_discriminator_loss()
+		discriminator_loss += self.zc_loss_factor * self.zc_loss
+		return discriminator_loss

@@ -1,0 +1,25 @@
+DONE:
+ - Improve dataset
+   x Remove images with wildly varying statistics (Super red / malformed)
+   x Remove ultra sparse images so pure black space 512x512 does not exist in true set
+ - More True image transformations for reduced overfitting of Discriminator
+   x Rotation
+   x Flipping: Horizontal and Vertical
+   x Consider other transformations
+
+TODO:
+ - InfoGAN Continuous noise would be cool
+    - Number of stars
+    - Colors
+    - Brightness
+ - Log interpolation of random noise variables
+   - More images with fixed z and changing InfoGan c,
+   - Fixed z except one, interpolate
+   - Interpolate all of z on a sphere, see tips: https://github.com/dribnet/plat
+ - Larger images
+   - 256x256 or 512x512 unlikely on GTX 1080, will need better hardware
+ - Write up technical paper for writing experience, post on arxiv
+   - Include discussion on dataset construction and preparation
+   - Discuss challenges with dataset
+   - Include experiments and samples
+   - Cite relevant prior work and papers implemented

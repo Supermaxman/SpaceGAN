@@ -95,7 +95,7 @@ class CategoricalPlotter(object):
 			filename = 'images-{}.png'.format(iteration)
 		filepath = os.path.join(folder, filename)
 
-		image = np.vstack([image for image, _ in images])
+		image = np.vstack([image for image, name in images if name != 'real_images'])
 
 		plt.imsave(filepath, image, format='png')
 
@@ -109,13 +109,24 @@ class CategoricalPlotter(object):
 	def _create_images(self, session):
 		images = []
 		name = 'z_samples'
+		fake_images, real_images = self._generate(session, self.zc_vector)
+		real_images = real_images[:self._row_size]
 		images.append(
 			(
 				create_image_strip(
-					self._generate(session, self.zc_vector),
+					fake_images,
 					zoom=self._zoom, gutter=self._gutter
 				),
 				name
+			)
+		)
+		images.append(
+			(
+				create_image_strip(
+					real_images,
+					zoom=self._zoom, gutter=self._gutter
+				),
+				'real_images'
 			)
 		)
 		return images
