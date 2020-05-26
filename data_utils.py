@@ -1,7 +1,5 @@
-import numpy as np
 import tensorflow as tf
 import os
-import random
 
 
 def create_dataset(
@@ -32,7 +30,6 @@ def create_dataset(
 		image = tf.image.random_crop(image, size=crop_shape)
 		if crop[0] != scale[0] or crop[1] != scale[1]:
 			image = tf.image.resize(image, size=scale, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-		# TODO random_flip & rotate
 		image = tf.image.random_flip_left_right(image)
 		image = tf.image.random_flip_up_down(image)
 		num_rotate = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
@@ -44,7 +41,6 @@ def create_dataset(
 		# [0, 1] -> [-0.5, 0.5] -> [-1, 1]
 		image = 2.0 * (image - 0.5)
 		return image
-
 
 	dataset = dataset.shuffle(
 		buffer_size=1000,

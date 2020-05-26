@@ -6,6 +6,9 @@ DONE:
    x Rotation
    x Flipping: Horizontal and Vertical
    x Consider other transformations
+ - Sampling code
+   x Use proper gan normal noise sampling techniques
+   x Write code to output samples in collage
 
 TODO:
  - InfoGAN Continuous noise would be cool
@@ -13,9 +16,7 @@ TODO:
     - Colors
     - Brightness
  - Log interpolation of random noise variables
-   - More images with fixed z and changing InfoGan c,
-   - Fixed z except one, interpolate
-   - Interpolate all of z on a sphere, see tips: https://github.com/dribnet/plat
+   - More images with fixed z and changing InfoGan c
  - Larger images
    - 256x256 or 512x512 unlikely on GTX 1080, will need better hardware
  - Write up technical paper for writing experience, post on arxiv

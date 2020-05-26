@@ -73,7 +73,7 @@ if __name__ == '__main__':
 	parser.add_argument('--generate_steps', type=int, default=50)
 	parser.add_argument('--save_steps', type=int, default=1000)
 	parser.add_argument(
-		'--load', type=str2bool, nargs='?', const=True, default=False, help='Load model from checkpoint directory.'
+		'--load', type=str2bool, nargs='?', const=True, default=True, help='Load model from checkpoint directory.'
 	)
 
 	args = parser.parse_args()

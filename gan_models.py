@@ -6,11 +6,12 @@ import tensorflow as tf
 # from tensorflow.examples.tutorials.mnist import input_data
 import matplotlib.pyplot as plt
 
-from categorical_grid_plots import CategoricalPlotter
+from categorical_grid_plots import CategoricalPlotter, create_image_strip
 
 from tqdm import tqdm
 import data_utils
 import noise_utils
+import interpolate
 
 import custom_layers
 
@@ -433,7 +434,6 @@ class AbstractGAN(abc.ABC):
 		self.build_generator()
 		self.build_discriminator()
 		self.build_train()
-		self.build_final()
 		self.build_summaries()
 		self.saver = tf.train.Saver(max_to_keep=3, save_relative_paths=True)
 
@@ -591,6 +591,57 @@ class AbstractGAN(abc.ABC):
 	def close(self):
 		self.sess.close()
 		tf.reset_default_graph()
+
+	def sample(self, num_samples, num_interpolations=5):
+		samples_dir = os.path.join(self.checkpoint_dir, 'samples')
+		if not os.path.exists(samples_dir):
+			os.makedirs(samples_dir)
+		samples_noise = np.reshape(
+			self.sample_noise(2*num_samples),
+			[num_samples, 2, self.random_size]
+		)
+		assert num_interpolations >= 3
+
+		interpolate_noise = np.zeros(
+			shape=[num_samples, num_interpolations, self.random_size]
+		)
+		# TODO can probably vectorize this to be faster
+		for i in range(num_samples):
+			start_noise = samples_noise[i, 0]
+			end_noise = samples_noise[i, 1]
+			for j in range(num_interpolations):
+				interp_val = j / (num_interpolations - 1)
+				i_j_noise = interpolate.slerp_gaussian(interp_val, start_noise, end_noise)
+				interpolate_noise[i, j] = i_j_noise
+
+		interpolate_noise = np.reshape(
+			interpolate_noise,
+			[num_samples * num_interpolations, self.random_size]
+		)
+
+		sample_images = self.sess.run(
+			self.fake_images,
+			{self.zc_vectors: interpolate_noise}
+		)
+		_, h, w, c = sample_images.shape
+
+		sample_images = np.reshape(
+			sample_images,
+			[num_samples, num_interpolations, h, w, c]
+		)
+		images = []
+		for i in range(num_samples):
+			image = create_image_strip(
+				sample_images[i],
+				gutter=2
+			)
+			images.append(image)
+		sample_name = 'sample.png'
+		sample_path = os.path.join(samples_dir, sample_name)
+
+		sample_image = np.vstack(images)
+
+		plt.imsave(sample_path, sample_image, format='png')
 
 
 class DCGAN(AbstractGAN):
