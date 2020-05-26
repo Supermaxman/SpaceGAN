@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-images-30500-128x128.png">
+  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-best-sample.png">
 </div>
 
 
@@ -9,15 +9,19 @@ Generative Adversarial Network on Hubble deep space scans from NASA
 
 ## Examples
 
+Best Interpolated Samples:
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-interpolate-sample.png">
+</div>
+
 Training Time-Lapse:
 <div align="center">
   <img src="https://github.com/Supermaxman/SpaceGAN/blob/master/samples/SpaceGAN-training.gif?raw=true">
 </div>
 
-
-Best Results:
+Best Samples:
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-images-30500-128x128.png">
+  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-best-sample.png">
 </div>
 
 ## TODO
