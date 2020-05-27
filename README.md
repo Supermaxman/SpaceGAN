@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-best-sample.png">
+  <img src="https://hubblesite.org/files/live/sites/hubble/files/home/_images/hs-images-hubble-side12x12.jpg?t=tn370">
 </div>
 
 
@@ -9,19 +9,27 @@ Generative Adversarial Network on Hubble deep space scans from NASA
 
 ## Examples
 
-Best Interpolated Samples:
+Samples:
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-interpolate-sample.png">
+  <img src="https://github.com/Supermaxman/SpaceGAN/blob/master/samples/independent.png?raw=true">
 </div>
+
+Interpolated Samples:
+<div align="center">
+  <img src="https://github.com/Supermaxman/SpaceGAN/blob/master/samples/interpolate.png?raw=true">
+</div>
+
+Anchor Interpolated Examples:
+<div align="center">
+  <img src="https://github.com/Supermaxman/SpaceGAN/blob/master/samples/anchor_interpolate.png?raw=true">
+</div>
+
+
+## Training
 
 Training Time-Lapse:
 <div align="center">
   <img src="https://github.com/Supermaxman/SpaceGAN/blob/master/samples/SpaceGAN-training.gif?raw=true">
-</div>
-
-Best Samples:
-<div align="center">
-  <img src="https://raw.githubusercontent.com/Supermaxman/SpaceGAN/master/samples/SpaceGAN-best-sample.png">
 </div>
 
 ## TODO
@@ -30,9 +38,7 @@ Best Samples:
     - Colors
     - Brightness
  - Log interpolation of random noise variables
-   - More images with fixed z and changing InfoGan c,
-   - Fixed z except one, interpolate
-   - Interpolate all of z on a sphere, see tips: https://github.com/dribnet/plat
+   - More images with fixed z and changing InfoGan c
  - Larger images
    - 256x256 or 512x512 unlikely on GTX 1080, will need better hardware
  - Write up technical paper for writing experience, post on arxiv
