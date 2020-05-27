@@ -47,7 +47,7 @@ if __name__ == '__main__':
 	parser.add_argument('--discriminator_noise_decay_zero_steps', type=int, default=100000)
 	# dcgan
 	parser.add_argument('--gan_type', type=str, default='dcgan')
-	parser.add_argument('--epochs', type=int, default=300)
+	parser.add_argument('--epochs', type=int, default=500)
 	# 512 x 512
 	parser.add_argument('--crop_dataset', type=int, nargs=2, default=(512, 512))
 	# 128 x 128

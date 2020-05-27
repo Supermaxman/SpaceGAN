@@ -9,6 +9,7 @@ import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.ERROR)
 import numpy as np
 import json
+import matplotlib.pyplot as plt
 
 import gan_models
 
@@ -31,6 +32,19 @@ if __name__ == '__main__':
 	parser.add_argument('--checkpoint_dir', type=str, default='D:/Models/SpaceGAN')
 	parser.add_argument('--num_samples', type=int, default=10)
 	parser.add_argument('--num_interpolations', type=int, default=10)
+	parser.add_argument('--sample_seed', type=int, default=11)
+	parser.add_argument(
+		'--sample_path',
+		type=str,
+		default=None,
+		help='File path for sample image output. If [None] then will use [sample_type].png as file name.'
+	)
+	parser.add_argument(
+		'--sample_type',
+		type=str,
+		default='interpolate',
+		help='Options: [interpolate, independent, anchor_interpolate]'
+	)
 
 	args = parser.parse_args()
 	config_path = os.path.join(args.checkpoint_dir, args.name, f'{args.name}.json')
@@ -39,7 +53,7 @@ if __name__ == '__main__':
 		gan_kwargs = json.load(f)
 	pp.pprint(gan_kwargs)
 
-	seed = gan_kwargs['seed']
+	seed = args.sample_seed
 	random.seed(seed)
 	np.random.seed(seed)
 	tf.set_random_seed(seed)
@@ -54,7 +68,7 @@ if __name__ == '__main__':
 	elif gan_type == 'infogan':
 		model = gan_models.InfoGAN(**gan_kwargs)
 	else:
-		raise Exception('Unimplemented type of GAN: {}'.format(gan_type))
+		raise ValueError(f'Unimplemented type of GAN: {gan_type}')
 
 	print('Building model...')
 	model.build()
@@ -63,7 +77,43 @@ if __name__ == '__main__':
 	model.load()
 
 	print('Generating samples...')
-	model.sample(args.num_samples, args.num_interpolations)
+	sample_type = args.sample_type.lower()
+	if sample_type == 'interpolate':
+		# [num_samples, num_interpolations]
+		# images where we sample 2 x num_samples as [0] and [num_interpolations-1]
+		# noise vectors and we interpolate between noise vectors for in-between indices.
+		# Demonstrates progressive changes between latent noise vectors.
+		sample_image = model.sample_interpolate(
+			args.num_samples,
+			args.num_interpolations
+		)
+	elif sample_type == 'independent':
+		# [num_samples, num_samples]
+		# images where we sample num_samples * num_samples and
+		# simply reshape to a grid for ease of viewing. Samples are completely
+		# independent of each other.
+		sample_image = model.sample_independent(
+			args.num_samples,
+			args.num_samples,
+		)
+	elif sample_type == 'anchor_interpolate':
+		# [num_interpolations, num_interpolations]
+		# images where we sample 4 latent vectors for each of the four corners of the grid.
+		# We interpolate between each of these corners to get edges of grid, and then we interpolate between edges.
+		# Because of non-linear interpolation we must select direction, which we choose as up-to-down for non-edge
+		# interpolations.
+		sample_image = model.sample_anchor_interpolate(
+			args.num_interpolations
+		)
+	else:
+		raise ValueError(f'Unimplemented type of sampling: {sample_type}')
+
+	sample_path = args.sample_path
+	if sample_path is None:
+		sample_path = f'{sample_type}.png'
+
+	print(f'Saving {sample_type} sample to file: {sample_path}')
+	plt.imsave(sample_path, sample_image, format='png')
 
 	print('Closing model...')
 	model.close()

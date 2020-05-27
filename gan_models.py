@@ -3,8 +3,6 @@ import abc
 
 import numpy as np
 import tensorflow as tf
-# from tensorflow.examples.tutorials.mnist import input_data
-import matplotlib.pyplot as plt
 
 from categorical_grid_plots import CategoricalPlotter, create_image_strip
 
@@ -592,10 +590,7 @@ class AbstractGAN(abc.ABC):
 		self.sess.close()
 		tf.reset_default_graph()
 
-	def sample(self, num_samples, num_interpolations=5):
-		samples_dir = os.path.join(self.checkpoint_dir, 'samples')
-		if not os.path.exists(samples_dir):
-			os.makedirs(samples_dir)
+	def sample_interpolate(self, num_samples, num_interpolations=5):
 		samples_noise = np.reshape(
 			self.sample_noise(2*num_samples),
 			[num_samples, 2, self.random_size]
@@ -633,15 +628,96 @@ class AbstractGAN(abc.ABC):
 		for i in range(num_samples):
 			image = create_image_strip(
 				sample_images[i],
-				gutter=2
+				gutter=1
 			)
 			images.append(image)
-		sample_name = 'sample.png'
-		sample_path = os.path.join(samples_dir, sample_name)
 
 		sample_image = np.vstack(images)
+		return sample_image
 
-		plt.imsave(sample_path, sample_image, format='png')
+	def sample_independent(self, num_row_samples, num_column_samples):
+
+		samples_noise = self.sample_noise(num_row_samples * num_column_samples)
+
+		sample_images = self.sess.run(
+			self.fake_images,
+			{self.zc_vectors: samples_noise}
+		)
+		_, h, w, c = sample_images.shape
+
+		sample_images = np.reshape(
+			sample_images,
+			[num_row_samples, num_column_samples, h, w, c]
+		)
+		images = []
+		for i in range(num_row_samples):
+			image = create_image_strip(
+				sample_images[i],
+				gutter=1
+			)
+			images.append(image)
+
+		sample_image = np.vstack(images)
+		return sample_image
+
+	def sample_anchor_interpolate(self, num_interpolations=10):
+		samples_noise = self.sample_noise(4)
+
+		assert num_interpolations >= 3
+
+		interpolate_noise = np.zeros(
+			shape=[num_interpolations, num_interpolations, self.random_size]
+		)
+		# covers the following first
+		# ul - - - ur
+		#
+		#
+		#
+		# bl - - - br
+
+		for j in range(num_interpolations):
+			j_interp_val = j / (num_interpolations - 1)
+			ul_ur_j_noise = interpolate.slerp_gaussian(j_interp_val, samples_noise[0], samples_noise[1])
+			interpolate_noise[0, j] = ul_ur_j_noise
+			bl_br_j_noise = interpolate.slerp_gaussian(j_interp_val, samples_noise[2], samples_noise[3])
+			interpolate_noise[-1, j] = bl_br_j_noise
+
+			# then computes interpolations vertically:
+			# ul - - - ur
+			# |  | | | |
+			# |  | | | |
+			# |  | | | |
+			# bl - - - br
+			for i in range(num_interpolations):
+				i_interp_val = i / (num_interpolations - 1)
+				i_j_noise = interpolate.slerp_gaussian(i_interp_val, interpolate_noise[0, j], interpolate_noise[-1, j])
+				interpolate_noise[i, j] = i_j_noise
+
+		interpolate_noise = np.reshape(
+			interpolate_noise,
+			[num_interpolations * num_interpolations, self.random_size]
+		)
+
+		sample_images = self.sess.run(
+			self.fake_images,
+			{self.zc_vectors: interpolate_noise}
+		)
+		_, h, w, c = sample_images.shape
+
+		sample_images = np.reshape(
+			sample_images,
+			[num_interpolations, num_interpolations, h, w, c]
+		)
+		images = []
+		for i in range(num_interpolations):
+			image = create_image_strip(
+				sample_images[i],
+				gutter=0
+			)
+			images.append(image)
+
+		sample_image = np.vstack(images)
+		return sample_image
 
 
 class DCGAN(AbstractGAN):
